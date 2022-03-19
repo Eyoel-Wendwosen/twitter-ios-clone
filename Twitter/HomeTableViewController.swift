@@ -13,6 +13,8 @@ class HomeTableViewController: UITableViewController {
 
     @IBOutlet weak var HomeNavigationItem: UINavigationItem!
     
+    let tableViewRefreshController = UIRefreshControl()
+    
     var tweetsArray = [NSDictionary]()
     
     override func viewDidLoad() {
@@ -23,18 +25,17 @@ class HomeTableViewController: UITableViewController {
         let imageView = UIImageView(image: logo)
         self.navigationItem.titleView = imageView
         */
-        
+        tableViewRefreshController.addTarget(self, action: #selector(loadTweets), for: .valueChanged)
+        tableView.refreshControl = tableViewRefreshController
         loadTweets()
-        // Uncomment the following line to preserve selection between presentations
-        // self.clearsSelectionOnViewWillAppear = false
-
-        // Uncomment the following line to display an Edit button in the navigation bar for this view controller.
-        // self.navigationItem.rightBarButtonItem = self.editButtonItem
     }
     
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        self.loadTweets()
+    }
     
-    func loadTweets() {
-        
+    @objc func loadTweets() {
         let tweetRequestUrl = "https://api.twitter.com/1.1/statuses/home_timeline.json"
         let tweetRequestParamteters = ["count": 15]
         
@@ -43,13 +44,36 @@ class HomeTableViewController: UITableViewController {
             for tweet in tweets {
                 self.tweetsArray.append(tweet)
             }
-            
+            self.tableView.reloadData()
+            self.tableViewRefreshController.endRefreshing()
+        }, failure: { Error in
+            print("Error can't load the tweets")
+            print(Error)
+            self.tableViewRefreshController.endRefreshing()
+        })
+    }
+    
+    func loadMoreTweets() {
+        let tweetRequestUrl = "https://api.twitter.com/1.1/statuses/home_timeline.json"
+        let numberOfTweets = tweetsArray.count + 15
+        let tweetRequestParamteters = ["count": numberOfTweets]
+        
+        TwitterAPICaller.client?.getDictionariesRequest(url: tweetRequestUrl, parameters: tweetRequestParamteters, success: { (tweets: [NSDictionary]) in
+            self.tweetsArray.removeAll()
+            for tweet in tweets {
+                self.tweetsArray.append(tweet)
+            }
             self.tableView.reloadData()
         }, failure: { Error in
             print("Error can't load the tweets")
         })
     }
-
+    
+    override func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
+        if indexPath.row + 1 == tweetsArray.count {
+            loadMoreTweets()
+        }
+    }
     @IBAction func onLogout(_ sender: Any) {
         TwitterAPICaller.client?.logout()
         UserDefaults.standard.set(false, forKey: "twitterUserLoggedIn")
@@ -61,16 +85,7 @@ class HomeTableViewController: UITableViewController {
         let cell = tableView.dequeueReusableCell(withIdentifier: "TweetCell", for: indexPath) as! TweetCell
         
         let tweet = tweetsArray[indexPath.row]
-        let user = tweet["user"] as! [String:Any]
-        let userProfileImageUrl = user["profile_background_image_url_https"] as? String
-        
-        if userProfileImageUrl != nil {
-            cell.userProflieImageView.af.setImage(withURL: userProfileImageUrl)
-        }
-        
-        
-        cell.userNamelabel.text = user["name"] as? String
-        cell.tweetContentLabel.text = tweet["text"] as? String
+        cell.configure(tweet: tweet)
         
         return cell
     }
